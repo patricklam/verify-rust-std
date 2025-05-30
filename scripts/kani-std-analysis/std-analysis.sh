@@ -24,12 +24,12 @@ then
   TARGET="x86_64-unknown-linux-gnu"
   # 'env' necessary to avoid bash built-in 'time'
   WRAPPER="env time -v"
-elif [[ $PLATFORM == "Darwin i386" ]]
+elif [[ $PLATFORM == "Darwin x86_64" ]]
 then
   TARGET="x86_64-apple-darwin"
   # mac 'time' doesn't have -v
   WRAPPER="time"
-elif [[ $PLATFORM == "Darwin arm" ]]
+elif [[ $PLATFORM == "Darwin arm64" ]]
 then
   TARGET="aarch64-apple-darwin"
   # mac 'time' doesn't have -v

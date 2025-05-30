@@ -18,7 +18,7 @@
 set -eu
 
 # Test for platform
-PLATFORM=$(uname -sp)
+PLATFORM=$(uname -sm)
 if [[ $PLATFORM == "Linux x86_64" ]]
 then
   TARGET="x86_64-unknown-linux-gnu"

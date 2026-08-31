@@ -5,6 +5,7 @@ use std::process;
 use std::path::Path;
 
 use std::collections::HashMap;
+use std::sync::LazyLock;
 
 use itertools::Itertools;
 
@@ -30,7 +31,8 @@ struct StructuredFnName {
     module_path: Vec<String>,
     type_parameters: Vec<String>,
     item: String,
-    is_public: bool
+    is_public: bool,
+    typ: String,
 }
 
 fn split_by_double_colons(s:&str) -> Vec<String> {
@@ -140,31 +142,37 @@ mod tests {
 	assert_eq!(result, ["<a,b),c"]);
     }
 }
+static TRAIT_IMPL: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"<(.+) as (.+)>").expect("invalid regex")
+});
+static BRACKETS: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"<(.+)>").expect("invalid regex")
+});
 
-fn parse_fn_name(raw_name:String, is_public:bool) -> StructuredFnName {
-    let trait_impl_re = Regex::new(r"<(.+) as (.+)>").unwrap();
-    let brackets_re = Regex::new(r"<(.+)>").unwrap();
+fn parse_fn_name(raw_name:String, is_public:bool, is_unsafe:bool) -> StructuredFnName {
+    let typ = if is_unsafe { "unsafe".to_string() } else { "unsafe-containing".to_string() };
     
     let parts:Vec<String> = split_by_double_colons(&raw_name).into_iter().rev().collect();
 
-    if parts.len() == 2 && trait_impl_re.is_match(&parts[1]) {
-        let ti_captures = trait_impl_re.captures(&parts[1]).unwrap();
+    if parts.len() == 2 && TRAIT_IMPL.is_match(&parts[1]) {
+        let ti_captures = TRAIT_IMPL.captures(&parts[1]).unwrap();
         return StructuredFnName {
             trait_impl: Some((ti_captures[1].to_string(), ti_captures[2].to_string())),
             module_path: vec![],
             type_parameters: vec![],
             item: parts[0].to_string(),
-            is_public: is_public
+            is_public: is_public,
+            typ: typ,
         }
     }
 
     let mut parts_index = 0;
     let item = &parts[parts_index]; parts_index += 1;
     let tp = &parts[parts_index].as_str();
-    let type_parameters = if brackets_re.is_match(tp) {
-        let tp_commas = &brackets_re.captures(tp).unwrap();
+    let type_parameters = if BRACKETS.is_match(tp) {
+        let tp_commas = &BRACKETS.captures(tp).unwrap();
 	parts_index += 1;
-        split_by_commas(&tp_commas[1]).into_iter().map(|x| x.to_string()).collect()
+        split_by_commas(&tp_commas[1]).into_iter().map(|x| x.to_string()).filter(|x| !x.starts_with("impl")).collect()
     } else {
         vec![]
     };
@@ -179,12 +187,13 @@ fn parse_fn_name(raw_name:String, is_public:bool) -> StructuredFnName {
         module_path: mp.into_iter().rev().collect(),
         type_parameters: type_parameters.into_iter().map(|x| x.to_string()).collect(),
         item: item.to_string(),
-        is_public: is_public
+        is_public: is_public,
+        typ: typ,
     }
 }
 
 fn handle_file(path:&Path) -> Result<(), Box<dyn Error>> {
-    let path_contents = fs::read_to_string(&path).expect("unable to read file");
+    let path_contents = fs::read_to_string(&path)?;
     let mut rdr = csv::ReaderBuilder::new().delimiter(b';').from_reader(path_contents.as_bytes());
 
     println!("# Unsafe usages in file {}", path.display());
@@ -192,9 +201,21 @@ fn handle_file(path:&Path) -> Result<(), Box<dyn Error>> {
     let mut fns_by_modules: HashMap<Vec<String>, Vec<StructuredFnName>> = HashMap::new();
     
     for result in rdr.deserialize() {
-        let fn_stats: FnStats = result?;
-	if matches!(fn_stats.is_unsafe, Some(true)) || matches!(fn_stats.has_unsafe_ops, Some(true)) {
-	    let structured_fn_name = parse_fn_name(fn_stats.name, fn_stats.is_public.is_some() && fn_stats.is_public.unwrap());
+	let fn_stats: FnStats = result?;
+	let is_unsafe = matches!(fn_stats.is_unsafe, Some(true));
+	if is_unsafe {
+            let is_public = matches!(fn_stats.is_public, Some(true));
+            if is_public {
+	        let structured_fn_name = parse_fn_name(fn_stats.name, is_public, is_unsafe);
+	        match fns_by_modules.get_mut(&structured_fn_name.module_path) {
+		    Some(fns) => fns.push(structured_fn_name.clone()),
+		    None => { fns_by_modules.insert(structured_fn_name.module_path.clone(), vec![structured_fn_name.clone()]); }
+	        }
+            }
+	}
+	else if !is_unsafe && matches!(fn_stats.has_unsafe_ops, Some(true)) {
+            let is_public = matches!(fn_stats.is_public, Some(true));
+	    let structured_fn_name = parse_fn_name(fn_stats.name, is_public, is_unsafe);
 	    match fns_by_modules.get_mut(&structured_fn_name.module_path) {
 		Some(fns) => fns.push(structured_fn_name.clone()),
 		None => { fns_by_modules.insert(structured_fn_name.module_path.clone(), vec![structured_fn_name.clone()]); }
@@ -206,7 +227,7 @@ fn handle_file(path:&Path) -> Result<(), Box<dyn Error>> {
 	println!("modules {:?}", mp);
 	if let Some(fns) = fns_by_modules.get(mp) {
 	    for structured_fn_name in fns {
-		println!("--- unsafe-containing fn {} {}", structured_fn_name.item, if structured_fn_name.is_public { "[pub]" } else { "" } );
+		println!("--- {} fn {} {}", structured_fn_name.typ, structured_fn_name.item, if structured_fn_name.is_public { "[pub]" } else { "" } );
                 if let Some(ti) = &structured_fn_name.trait_impl {
                     println!("    trait impl: type {} as trait {}", ti.0, ti.1);
                 } else {}

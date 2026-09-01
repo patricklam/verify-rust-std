@@ -212,8 +212,8 @@ fn parse_fn_name(raw_name: String, is_public: bool, is_unsafe: bool) -> Structur
             module_path: Vec::new(),
             type_parameters: Vec::new(),
             item: raw_name,
-            is_public: is_public,
-            typ: typ,
+            is_public,
+            typ,
         };
     }
 
@@ -224,8 +224,8 @@ fn parse_fn_name(raw_name: String, is_public: bool, is_unsafe: bool) -> Structur
             module_path: vec![],
             type_parameters: vec![],
             item: parts[0].to_string(),
-            is_public: is_public,
-            typ: typ,
+            is_public,
+            typ,
         };
     }
 
@@ -255,13 +255,13 @@ fn parse_fn_name(raw_name: String, is_public: bool, is_unsafe: bool) -> Structur
         module_path: mp.into_iter().rev().collect(),
         type_parameters: type_parameters.into_iter().map(|x| x.to_string()).collect(),
         item: item.to_string(),
-        is_public: is_public,
-        typ: typ,
+        is_public,
+        typ,
     }
 }
 
 fn handle_file(path: &Path) -> Result<(), Box<dyn Error>> {
-    let path_contents = fs::read_to_string(&path)?;
+    let path_contents = fs::read_to_string(path)?;
     let mut rdr = csv::ReaderBuilder::new()
         .delimiter(b';')
         .from_reader(path_contents.as_bytes());
@@ -318,7 +318,6 @@ fn handle_file(path: &Path) -> Result<(), Box<dyn Error>> {
                 );
                 if let Some(ti) = &structured_fn_name.trait_impl {
                     println!("    trait impl: type {} as trait {}", ti.0, ti.1);
-                } else {
                 }
                 if !structured_fn_name.type_parameters.is_empty() {
                     println!(
@@ -345,7 +344,7 @@ fn main() {
 
     for arg in args {
         let path = Path::new(&arg);
-        if let Err(err) = handle_file(&path) {
+        if let Err(err) = handle_file(path) {
             eprintln!("error processing {}: {}", arg, err);
             process::exit(1);
         }

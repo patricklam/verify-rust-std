@@ -10,7 +10,6 @@
 #  - ${crate}_scan_functions.csv: Function metrics including counts of unsafe functions and allegedly-safe abstractions.
 #  - ${crate}_scan_input_tys.csv: Detailed information about the inputs' type of each
 #    function found in this crate.
-#  - ... and others.
 #
 # How we collect metrics:
 #
@@ -20,8 +19,8 @@
 set -eu
 
 # Test for platform
-PLATFORM=$(uname -msp)
-if [[ $PLATFORM == "Linux x86_64 unknown" ]]
+PLATFORM=$(uname -sm)
+if [[ $PLATFORM == "Linux x86_64" ]]
 then
   TARGET="x86_64-unknown-linux-gnu"
   # 'env' necessary to avoid bash built-in 'time'

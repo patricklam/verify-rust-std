@@ -152,7 +152,23 @@ mod tests {
     }
 
     #[test]
-    fn parse_fn_name_normal() {
+    fn parse_fn_name_insufficient_segments() {
+        let result = parse_fn_name("foo".to_string(), false, false);
+        assert_eq!(
+            result,
+            StructuredFnName {
+                trait_impl: None,
+                module_path: Vec::new(),
+                type_parameters: Vec::new(),
+                item: "foo".to_string(),
+                is_public: false,
+                typ: "unsafe-containing".to_string()
+            }
+        );
+    }
+
+    #[test]
+    fn parse_fn_name_trait_impl() {
         let result = parse_fn_name(
             "<std::fs::Permissions as std::os::unix::fs::PermissionsExt>::from_mode".to_string(),
             false,
@@ -175,15 +191,26 @@ mod tests {
     }
 
     #[test]
-    fn parse_fn_name_insufficient_segments() {
-        let result = parse_fn_name("foo".to_string(), false, false);
+    fn parse_fn_name_with_generics() {
+        let result = parse_fn_name(
+            "std::sync::mpmc::list::Channel::<T>::len".to_string(),
+            false,
+            false,
+        );
         assert_eq!(
             result,
             StructuredFnName {
                 trait_impl: None,
-                module_path: Vec::new(),
-                type_parameters: Vec::new(),
-                item: "foo".to_string(),
+                module_path: [
+                    "std".to_string(),
+                    "sync".to_string(),
+                    "mpmc".to_string(),
+                    "list".to_string(),
+                    "Channel".to_string()
+                ]
+                .to_vec(),
+                type_parameters: ["T".to_string()].to_vec(),
+                item: "len".to_string(),
                 is_public: false,
                 typ: "unsafe-containing".to_string()
             }

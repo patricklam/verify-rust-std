@@ -194,23 +194,9 @@ fn handle_file(path: &Path) -> Result<(), Box<dyn Error>> {
     for result in rdr.deserialize() {
         let fn_stats: FnStats = result?;
         let is_unsafe = matches!(fn_stats.is_unsafe, Some(true));
-        if is_unsafe {
-            let is_public = matches!(fn_stats.is_public, Some(true));
-            if is_public {
-                let structured_fn_name = parse_fn_name(fn_stats.name, is_public, is_unsafe);
-                match fns_by_modules.get_mut(&structured_fn_name.module_path) {
-                    Some(fns) => fns.push(structured_fn_name.clone()),
-                    None => {
-                        fns_by_modules.insert(
-                            structured_fn_name.module_path.clone(),
-                            vec![structured_fn_name.clone()],
-                        );
-                    }
-                }
-            }
-        } else if !is_unsafe && matches!(fn_stats.has_unsafe_ops, Some(true)) {
-            let is_public = matches!(fn_stats.is_public, Some(true));
-            let structured_fn_name = parse_fn_name(fn_stats.name, is_public, is_unsafe);
+        let is_public = matches!(fn_stats.is_public, Some(true));
+        let structured_fn_name = parse_fn_name(fn_stats.name, is_public, is_unsafe);
+        if is_unsafe || (!is_unsafe && matches!(fn_stats.has_unsafe_ops, Some(true))) {
             match fns_by_modules.get_mut(&structured_fn_name.module_path) {
                 Some(fns) => fns.push(structured_fn_name.clone()),
                 None => {
@@ -224,7 +210,15 @@ fn handle_file(path: &Path) -> Result<(), Box<dyn Error>> {
     }
 
     for mp in fns_by_modules.keys().sorted() {
-        println!("modules {:?}", mp);
+        println!(
+            "modules {:?} {}",
+            mp,
+            if mp.is_empty() {
+                "(including trait impls)"
+            } else {
+                ""
+            }
+        );
         if let Some(fns) = fns_by_modules.get(mp) {
             for structured_fn_name in fns {
                 println!(
@@ -255,15 +249,21 @@ fn handle_file(path: &Path) -> Result<(), Box<dyn Error>> {
 
 fn main() {
     let mut args = env::args();
-    let _ = args.next(); // executable name
+    let _ = args.next(); // skip executable name
 
     if args.len() == 0 {
-        // should we only handle files named "_scan_functions.csv"?
         eprintln!("Usage: unsafe-finder [[prefix]_scan_functions.csv]*");
         process::exit(1);
     }
 
     for arg in args {
+        if !arg.ends_with("_scan_functions.csv") {
+            eprintln!(
+                "error: filename {} does not end with _scan_functions.csv",
+                arg
+            );
+            process::exit(1);
+        }
         let path = Path::new(&arg);
         if let Err(err) = handle_file(path) {
             eprintln!("error processing {}: {}", arg, err);

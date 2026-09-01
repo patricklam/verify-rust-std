@@ -1,7 +1,7 @@
 # Unsafe finder
 
 This tool identifies two types of functions:
-1. those that belong to impls and are `pub unsafe`; and,
+1. those that belong to impls and are marked `unsafe`; and,
 2. those that belong to impls and are *not* `unsafe` but contain `unsafe` code.
 
 The clippy `missing_safety_doc` lint nags developers to add
@@ -9,7 +9,7 @@ The clippy `missing_safety_doc` lint nags developers to add
 configuration option that will make clippy also complain about private
 unsafe functions (default false). For the purpose of verifying the
 Rust standard library, such functions should have contracts and be
-verified against them.
+verified against them, whether they are public or not.
 
 For category (2), the unsafety is encapsulated in the
 function; there must be some reason that the unsafe code in the

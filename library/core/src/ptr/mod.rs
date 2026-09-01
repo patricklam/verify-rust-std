@@ -405,7 +405,7 @@ use crate::cmp::Ordering;
 use crate::intrinsics::const_eval_select;
 #[cfg(kani)]
 use crate::kani;
-use crate::marker::{FnPtr, PointeeSized};
+use crate::marker::{Destruct, FnPtr, PointeeSized};
 use crate::mem::{self, MaybeUninit, SizedTypeProperties};
 use crate::num::NonZero;
 use crate::{fmt, hash, intrinsics, ub_checks};
@@ -525,6 +525,12 @@ mod mut_ptr;
 #[inline(always)]
 #[cfg_attr(miri, track_caller)] // even without panics, this helps for Miri backtraces
 #[rustc_diagnostic_item = "ptr_copy_nonoverlapping"]
+#[cfg_attr(rapx, rapx::requires(Align(src, T)))]
+#[cfg_attr(rapx, rapx::requires(Align(dst, T)))]
+#[cfg_attr(rapx, rapx::requires(ValidPtr(src, T, count)))]
+#[cfg_attr(rapx, rapx::requires(ValidPtr(dst, T, count)))]
+#[cfg_attr(rapx, rapx::requires(NonOverlap(dst, src, T, count)))]
+#[cfg_attr(rapx, rapx::requires(ValidNum(size_of(T) * count <= isize::MAX)))]
 pub const unsafe fn copy_nonoverlapping<T>(src: *const T, dst: *mut T, count: usize) {
     ub_checks::assert_unsafe_precondition!(
         check_language_ub,
@@ -622,6 +628,10 @@ pub const unsafe fn copy_nonoverlapping<T>(src: *const T, dst: *mut T, count: us
 #[inline(always)]
 #[cfg_attr(miri, track_caller)] // even without panics, this helps for Miri backtraces
 #[rustc_diagnostic_item = "ptr_copy"]
+#[cfg_attr(rapx, rapx::requires(ValidPtr(src, T, count)))]
+#[cfg_attr(rapx, rapx::requires(Align(src, T)))]
+#[cfg_attr(rapx, rapx::requires(ValidPtr(dst, T, count)))]
+#[cfg_attr(rapx, rapx::requires(Align(dst, T)))]
 pub const unsafe fn copy<T>(src: *const T, dst: *mut T, count: usize) {
     // SAFETY: the safety contract for `copy` must be upheld by the caller.
     unsafe {
@@ -803,7 +813,11 @@ pub const unsafe fn write_bytes<T>(dst: *mut T, val: u8, count: usize) {
 #[lang = "drop_in_place"]
 #[allow(unconditional_recursion)]
 #[rustc_diagnostic_item = "ptr_drop_in_place"]
-pub unsafe fn drop_in_place<T: PointeeSized>(to_drop: *mut T) {
+#[rustc_const_unstable(feature = "const_drop_in_place", issue = "109342")]
+pub const unsafe fn drop_in_place<T: PointeeSized>(to_drop: *mut T)
+where
+    T: [const] Destruct,
+{
     // Code here does not matter - this is replaced by the
     // real drop glue by the compiler.
 
@@ -977,7 +991,7 @@ pub const fn dangling_mut<T>() -> *mut T {
 #[must_use]
 #[inline(always)]
 #[stable(feature = "exposed_provenance", since = "1.84.0")]
-#[rustc_const_stable(feature = "const_exposed_provenance", since = "CURRENT_RUSTC_VERSION")]
+#[rustc_const_stable(feature = "const_exposed_provenance", since = "1.91.0")]
 #[cfg_attr(miri, track_caller)] // even without panics, this helps for Miri backtraces
 #[allow(fuzzy_provenance_casts)] // this *is* the explicit provenance API one should use instead
 pub const fn with_exposed_provenance<T>(addr: usize) -> *const T {
@@ -1018,7 +1032,7 @@ pub const fn with_exposed_provenance<T>(addr: usize) -> *const T {
 #[must_use]
 #[inline(always)]
 #[stable(feature = "exposed_provenance", since = "1.84.0")]
-#[rustc_const_stable(feature = "const_exposed_provenance", since = "CURRENT_RUSTC_VERSION")]
+#[rustc_const_stable(feature = "const_exposed_provenance", since = "1.91.0")]
 #[cfg_attr(miri, track_caller)] // even without panics, this helps for Miri backtraces
 #[allow(fuzzy_provenance_casts)] // this *is* the explicit provenance API one should use instead
 pub const fn with_exposed_provenance_mut<T>(addr: usize) -> *mut T {
@@ -1356,6 +1370,9 @@ pub const unsafe fn swap<T>(x: *mut T, y: *mut T) {
 #[rustc_diagnostic_item = "ptr_swap_nonoverlapping"]
 #[rustc_allow_const_fn_unstable(const_eval_select)] // both implementations behave the same
 #[track_caller]
+#[cfg_attr(rapx, rapx::requires(ValidPtr(x, T, count)))]
+#[cfg_attr(rapx, rapx::requires(Align(x, T)))]
+#[cfg_attr(rapx, rapx::requires(NonOverlap(x, y, T, count)))]
 pub const unsafe fn swap_nonoverlapping<T>(x: *mut T, y: *mut T, count: usize) {
     ub_checks::assert_unsafe_precondition!(
         check_library_ub,
@@ -2170,10 +2187,9 @@ pub unsafe fn write_volatile<T>(dst: *mut T, src: T) {
     }
 }
 
-/// Align pointer `p`.
+/// Calculate an element-offset that increases a pointer's alignment.
 ///
-/// Calculate offset (in terms of elements of `size_of::<T>()` stride) that has to be applied
-/// to pointer `p` so that pointer `p` would get aligned to `a`.
+/// Calculate an element-offset (not byte-offset) that when added to a given pointer `p`, increases `p`'s alignment to at least the given alignment `a`.
 ///
 /// # Safety
 /// `a` must be a power of two.
@@ -2207,9 +2223,8 @@ pub unsafe fn write_volatile<T>(dst: *mut T, src: T) {
     }
 
     // Checking if the answer should indeed be usize::MAX when a % stride != 0
-    // requires computing gcd(a, stride), which is too expensive without
-    // quantifiers (https://model-checking.github.io/kani/rfc/rfcs/0010-quantifiers.html).
-    // This should be updated once quantifiers are available.
+    // requires computing gcd(a, stride), which could be done using cttz as the implementation
+    // does.
     if (a % stride != 0 && *result == usize::MAX) {
         return true;
     }
@@ -2222,6 +2237,9 @@ pub unsafe fn write_volatile<T>(dst: *mut T, src: T) {
     let new_addr = usize::wrapping_add(product, p.addr());
     *result != usize::MAX && new_addr % a == 0
 })]
+/// # Safety
+/// The alignment `a` must be a non-zero power of two.
+#[cfg_attr(rapx, rapx::requires(ValidNum(a != 0)))]
 pub(crate) unsafe fn align_offset<T: Sized>(p: *const T, a: usize) -> usize {
     // FIXME(#75598): Direct use of these intrinsics improves codegen significantly at opt-level <=
     // 1, where the method versions of these operations are not inlined.
@@ -2236,16 +2254,15 @@ pub(crate) unsafe fn align_offset<T: Sized>(p: *const T, a: usize) -> usize {
     ///
     /// * `m` is a power-of-two;
     /// * `x < m`; (if `x ≥ m`, pass in `x % m` instead)
+    /// * `x` is odd, unless `m == 1` (any `x` is an inverse modulo 1)
     ///
     /// Implementation of this function shall not panic. Ever.
     #[safety::requires(m.is_power_of_two())]
     #[safety::requires(x < m)]
-    // TODO: add ensures contract to check that the answer is indeed correct
-    // This will require quantifiers (https://model-checking.github.io/kani/rfc/rfcs/0010-quantifiers.html)
-    // so that we can add a precondition that gcd(x, m) = 1 like so:
-    // ∀d, d > 0 ∧ x % d = 0 ∧ m % d = 0 → d = 1
-    // With this precondition, we can then write this postcondition to check the correctness of the answer:
-    // #[safety::ensures(|result| wrapping_mul(*result, x) % m == 1)]
+    #[safety::requires(m == 1 || x % 2 != 0)]
+    // for Kani (v0.65.0), the below multiplication is too costly to prove
+    #[cfg_attr(not(kani),
+        safety::ensures(|result| wrapping_mul(*result, x) % m == 1 % m))]
     #[inline]
     const unsafe fn mod_inv(x: usize, m: usize) -> usize {
         /// Multiplicative modular inverse table modulo 2⁴ = 16.

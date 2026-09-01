@@ -2,6 +2,7 @@
 //!
 //! Better known as "varargs".
 
+#[cfg(not(target_arch = "xtensa"))]
 use crate::ffi::c_void;
 #[allow(unused_imports)]
 use crate::fmt;
@@ -24,7 +25,7 @@ crate::cfg_select! {
         ///
         /// [AArch64 Procedure Call Standard]:
         /// http://infocenter.arm.com/help/topic/com.arm.doc.ihi0055b/IHI0055B_aapcs64.pdf
-        #[cfg_attr(not(doc), repr(C))] // work around https://github.com/rust-lang/rust/issues/66401
+        #[repr(C)]
         #[derive(Debug)]
         #[lang = "va_list"]
         pub struct VaListImpl<'f> {
@@ -38,7 +39,7 @@ crate::cfg_select! {
     }
     all(target_arch = "powerpc", not(target_os = "uefi"), not(windows)) => {
         /// PowerPC ABI implementation of a `va_list`.
-        #[cfg_attr(not(doc), repr(C))] // work around https://github.com/rust-lang/rust/issues/66401
+        #[repr(C)]
         #[derive(Debug)]
         #[lang = "va_list"]
         pub struct VaListImpl<'f> {
@@ -52,7 +53,7 @@ crate::cfg_select! {
     }
     target_arch = "s390x" => {
         /// s390x ABI implementation of a `va_list`.
-        #[cfg_attr(not(doc), repr(C))] // work around https://github.com/rust-lang/rust/issues/66401
+        #[repr(C)]
         #[derive(Debug)]
         #[lang = "va_list"]
         pub struct VaListImpl<'f> {
@@ -65,7 +66,7 @@ crate::cfg_select! {
     }
     all(target_arch = "x86_64", not(target_os = "uefi"), not(windows)) => {
         /// x86_64 ABI implementation of a `va_list`.
-        #[cfg_attr(not(doc), repr(C))] // work around https://github.com/rust-lang/rust/issues/66401
+        #[repr(C)]
         #[derive(Debug)]
         #[lang = "va_list"]
         pub struct VaListImpl<'f> {
@@ -202,18 +203,23 @@ mod sealed {
     impl<T> Sealed for *const T {}
 }
 
-/// Trait which permits the allowed types to be used with [`VaListImpl::arg`].
+/// Types that are valid to read using [`VaListImpl::arg`].
 ///
 /// # Safety
 ///
-/// This trait must only be implemented for types that C passes as varargs without implicit promotion.
+/// The standard library implements this trait for primitive types that are
+/// expected to have a variable argument application-binary interface (ABI) on all
+/// platforms.
 ///
-/// In C varargs, integers smaller than [`c_int`] and floats smaller than [`c_double`]
-/// are implicitly promoted to [`c_int`] and [`c_double`] respectively. Implementing this trait for
-/// types that are subject to this promotion rule is invalid.
+/// When C passes variable arguments, integers smaller than [`c_int`] and floats smaller
+/// than [`c_double`] are implicitly promoted to [`c_int`] and [`c_double`] respectively.
+/// Implementing this trait for types that are subject to this promotion rule is invalid.
 ///
 /// [`c_int`]: core::ffi::c_int
 /// [`c_double`]: core::ffi::c_double
+// We may unseal this trait in the future, but currently our `va_arg` implementations don't support
+// types with an alignment larger than 8, or with a non-scalar layout. Inline assembly can be used
+// to accept unsupported types in the meantime.
 pub unsafe trait VaArgSafe: sealed::Sealed {}
 
 // i8 and i16 are implicitly promoted to c_int in C, and cannot implement `VaArgSafe`.
@@ -233,7 +239,20 @@ unsafe impl<T> VaArgSafe for *mut T {}
 unsafe impl<T> VaArgSafe for *const T {}
 
 impl<'f> VaListImpl<'f> {
-    /// Advance to the next arg.
+    /// Advance to and read the next variable argument.
+    ///
+    /// # Safety
+    ///
+    /// This function is only sound to call when:
+    ///
+    /// - there is a next variable argument available.
+    /// - the next argument's type must be ABI-compatible with the type `T`.
+    /// - the next argument must have a properly initialized value of type `T`.
+    ///
+    /// Calling this function with an incompatible type, an invalid value, or when there
+    /// are no more variable arguments, is unsound.
+    ///
+    /// [valid]: https://doc.rust-lang.org/nightly/nomicon/what-unsafe-does.html
     #[inline]
     pub unsafe fn arg<T: VaArgSafe>(&mut self) -> T {
         // SAFETY: the caller must uphold the safety contract for `va_arg`.
@@ -281,3 +300,15 @@ impl<'f> Drop for VaListImpl<'f> {
         // This works for now, since `va_end` is a no-op on all current LLVM targets.
     }
 }
+
+// Checks (via an assert in `compiler/rustc_ty_utils/src/abi.rs`) that the C ABI for the current
+// target correctly implements `rustc_pass_indirectly_in_non_rustic_abis`.
+const _: () = {
+    #[repr(C)]
+    #[rustc_pass_indirectly_in_non_rustic_abis]
+    struct Type(usize);
+
+    const extern "C" fn c(_: Type) {}
+
+    c(Type(0))
+};

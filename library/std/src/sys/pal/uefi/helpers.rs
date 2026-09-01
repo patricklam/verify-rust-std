@@ -12,6 +12,7 @@
 use r_efi::efi::{self, Guid};
 use r_efi::protocols::{device_path, device_path_to_text, service_binding, shell};
 
+use crate::alloc::Layout;
 use crate::ffi::{OsStr, OsString};
 use crate::io::{self, const_error};
 use crate::marker::PhantomData;
@@ -92,6 +93,9 @@ pub(crate) fn locate_handles(mut guid: Guid) -> io::Result<Vec<NonNull<crate::ff
 ///
 /// Queries a handle to determine if it supports a specified protocol. If the protocol is
 /// supported by the handle, it opens the protocol on behalf of the calling agent.
+///
+/// The protocol is opened with the attribute GET_PROTOCOL, which means the caller is not required
+/// to close the protocol interface with `EFI_BOOT_SERVICES.CloseProtocol()`
 pub(crate) fn open_protocol<T>(
     handle: NonNull<crate::ffi::c_void>,
     mut protocol_guid: Guid,
@@ -473,6 +477,7 @@ impl<'a> crate::fmt::Debug for DevicePathNode<'a> {
     }
 }
 
+/// Protocols installed by Rust side on a handle.
 pub(crate) struct OwnedProtocol<T> {
     guid: r_efi::efi::Guid,
     handle: NonNull<crate::ffi::c_void>,
@@ -764,4 +769,44 @@ pub(crate) const fn ipv4_to_r_efi(addr: crate::net::Ipv4Addr) -> efi::Ipv4Addres
 
 pub(crate) const fn ipv4_from_r_efi(ip: efi::Ipv4Address) -> crate::net::Ipv4Addr {
     crate::net::Ipv4Addr::new(ip.addr[0], ip.addr[1], ip.addr[2], ip.addr[3])
+}
+
+/// This type is intended for use with ZSTs. Since such types are unsized, a reference to such types
+/// is not valid in Rust. Thus, only pointers should be used when interacting with such types.
+pub(crate) struct UefiBox<T> {
+    inner: NonNull<T>,
+    size: usize,
+}
+
+impl<T> UefiBox<T> {
+    pub(crate) fn new(len: usize) -> io::Result<Self> {
+        assert!(len >= size_of::<T>());
+        // UEFI always expects types to be 8 byte aligned.
+        let layout = Layout::from_size_align(len, 8).unwrap();
+        let ptr = unsafe { crate::alloc::alloc(layout) };
+
+        match NonNull::new(ptr.cast()) {
+            Some(inner) => Ok(Self { inner, size: len }),
+            None => Err(io::Error::new(io::ErrorKind::OutOfMemory, "Allocation failed")),
+        }
+    }
+
+    pub(crate) fn write(&mut self, data: T) {
+        unsafe { self.inner.write(data) }
+    }
+
+    pub(crate) fn as_mut_ptr(&mut self) -> *mut T {
+        self.inner.as_ptr().cast()
+    }
+
+    pub(crate) fn as_ptr(&self) -> *const T {
+        self.inner.as_ptr().cast()
+    }
+}
+
+impl<T> Drop for UefiBox<T> {
+    fn drop(&mut self) {
+        let layout = Layout::from_size_align(self.size, 8).unwrap();
+        unsafe { crate::alloc::dealloc(self.inner.as_ptr().cast(), layout) };
+    }
 }

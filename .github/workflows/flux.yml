@@ -8,8 +8,8 @@ on:
     branches: [main]
 
 env:
-  FIXPOINT_VERSION: "556104ba5508891c357b0bdf819ce706e93d9349"
-  FLUX_VERSION: "b0cec81c42bc6e210f675b46dd5b4b16774b0d0e"
+  FLUX_VERSION: "27e3ef52b52253a1d128aff7b80894bed4da0c95"
+  FIXPOINT_VERSION: "nightly-01-14-2026"
 
 jobs:
   check-flux-on-core:
@@ -25,27 +25,22 @@ jobs:
           echo ~/.cargo/bin >> $GITHUB_PATH
           echo ~/.local/bin >> $GITHUB_PATH
 
-      - name: Cache fixpoint
-        uses: actions/cache@v4
-        id: cache-fixpoint
-        with:
-          path: ~/.local/bin/fixpoint
-          key: fixpoint-bin-${{ runner.os }}-${{ env.FIXPOINT_VERSION }}
-
-      - name: Install Haskell
-        if: steps.cache-fixpoint.outputs.cache-hit != 'true'
-        uses: haskell-actions/setup@v2.7.0
-        with:
-          enable-stack: true
-          stack-version: "2.15.7"
-
-      - name: Install fixpoint
-        if: steps.cache-fixpoint.outputs.cache-hit != 'true'
+      - name: Download and install fixpoint
         run: |
-          git clone https://github.com/ucsd-progsys/liquid-fixpoint.git
-          cd liquid-fixpoint
-          git checkout $FIXPOINT_VERSION
-          stack install --fast --flag liquid-fixpoint:-link-z3-as-a-library
+          set -e
+          NAME="fixpoint-x86_64-linux-gnu.tar.gz"
+          URL="https://github.com/ucsd-progsys/liquid-fixpoint/releases/download/${FIXPOINT_VERSION}/${NAME}"
+
+          echo "Downloading from $URL"
+          curl -fsSL --retry 3 -o "$NAME" "$URL"
+
+          echo "Extracting archive"
+          tar -xzf "$NAME"
+          mkdir -p ~/.local/bin
+          cp fixpoint ~/.local/bin/fixpoint
+
+          echo "Cleaning up"
+          rm -f "$NAME"
 
       - name: Install Z3
         uses: cda-tum/setup-z3@v1.6.1

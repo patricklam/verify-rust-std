@@ -2,24 +2,18 @@
 
 use crate::io::ErrorKind;
 
-#[cfg(not(target_os = "espidf"))]
-#[macro_use]
-pub mod weak;
-
 #[cfg(target_os = "fuchsia")]
 pub mod fuchsia;
 pub mod futex;
-#[cfg(any(target_os = "linux", target_os = "android"))]
-pub mod kernel_copy;
 #[cfg(target_os = "linux")]
 pub mod linux;
 pub mod os;
 pub mod pipe;
 pub mod stack_overflow;
 pub mod sync;
-pub mod thread;
 pub mod thread_parking;
 pub mod time;
+pub mod weak;
 
 #[cfg(target_os = "espidf")]
 pub fn init(_argc: isize, _argv: *const *const u8, _sigpipe: u8) {}
@@ -55,7 +49,7 @@ pub unsafe fn init(argc: isize, argv: *const *const u8, sigpipe: u8) {
     // thread-id for the main thread and so renaming the main thread will rename the
     // process and we only want to enable this on platforms we've tested.
     if cfg!(target_vendor = "apple") {
-        thread::Thread::set_name(&c"main");
+        crate::sys::thread::set_name(c"main");
     }
 
     unsafe fn sanitize_standard_fds() {
@@ -364,6 +358,7 @@ pub fn cvt_nz(error: libc::c_int) -> crate::io::Result<()> {
 // multithreaded C program.  It is much less severe for Rust, because Rust
 // stdlib doesn't use libc stdio buffering.  In a typical Rust program, which
 // does not use C stdio, even a buggy libc::abort() is, in fact, safe.
+#[cfg_attr(miri, track_caller)] // even without panics, this helps for Miri backtraces
 pub fn abort_internal() -> ! {
     unsafe { libc::abort() }
 }
@@ -382,6 +377,7 @@ cfg_select! {
         unsafe extern "C" {}
     }
     target_os = "netbsd" => {
+        #[link(name = "execinfo")]
         #[link(name = "pthread")]
         #[link(name = "rt")]
         unsafe extern "C" {}

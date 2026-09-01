@@ -13,16 +13,21 @@
 #![feature(bool_to_result)]
 #![feature(bstr)]
 #![feature(cfg_target_has_reliable_f16_f128)]
+#![feature(char_internals)]
 #![feature(char_max_len)]
 #![feature(clone_to_uninit)]
-#![feature(const_deref)]
+#![feature(const_cell_traits)]
+#![feature(const_cmp)]
+#![feature(const_convert)]
 #![feature(const_destruct)]
+#![feature(const_drop_in_place)]
 #![feature(const_eval_select)]
-#![feature(const_from)]
+#![feature(const_mul_add)]
 #![feature(const_ops)]
 #![feature(const_option_ops)]
 #![feature(const_ref_cell)]
 #![feature(const_result_trait_fn)]
+#![feature(const_select_unpredictable)]
 #![feature(const_trait_impl)]
 #![feature(control_flow_ok)]
 #![feature(core_float_math)]
@@ -32,6 +37,7 @@
 #![feature(core_private_bignum)]
 #![feature(core_private_diy_float)]
 #![feature(cstr_display)]
+#![feature(debug_closure_helpers)]
 #![feature(dec2flt)]
 #![feature(drop_guard)]
 #![feature(duration_constants)]
@@ -50,6 +56,7 @@
 #![feature(fmt_internals)]
 #![feature(formatting_options)]
 #![feature(freeze)]
+#![feature(funnel_shifts)]
 #![feature(future_join)]
 #![feature(generic_assert_internals)]
 #![feature(hasher_prefixfree_extras)]
@@ -77,24 +84,29 @@
 #![feature(maybe_uninit_write_slice)]
 #![feature(min_specialization)]
 #![feature(never_type)]
+#![feature(new_range_api)]
 #![feature(next_index)]
 #![feature(non_exhaustive_omitted_patterns_lint)]
 #![feature(numfmt)]
+#![feature(one_sided_range)]
+#![feature(option_reduce)]
 #![feature(pattern)]
+#![feature(peekable_next_if_map)]
 #![feature(pointer_is_aligned_to)]
 #![feature(portable_simd)]
 #![feature(ptr_metadata)]
 #![feature(result_option_map_or_default)]
 #![feature(slice_from_ptr_range)]
+#![feature(slice_index_methods)]
 #![feature(slice_internals)]
 #![feature(slice_partition_dedup)]
 #![feature(slice_split_once)]
+#![feature(sliceindex_wrappers)]
 #![feature(split_array)]
 #![feature(split_as_slice)]
 #![feature(std_internals)]
 #![feature(step_trait)]
 #![feature(str_internals)]
-#![feature(strict_provenance_atomic_ptr)]
 #![feature(strict_provenance_lints)]
 #![feature(test)]
 #![feature(trusted_len)]
@@ -167,6 +179,7 @@ mod fmt;
 mod future;
 mod hash;
 mod hint;
+mod index;
 mod intrinsics;
 mod io;
 mod iter;
@@ -194,6 +207,7 @@ mod time;
 mod tuple;
 mod unicode;
 mod waker;
+mod wtf8;
 
 /// Copied from `std::test_helpers::test_rng`, see that function for rationale.
 #[track_caller]

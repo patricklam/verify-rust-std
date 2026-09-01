@@ -76,12 +76,12 @@ impl char {
 
     /// The maximum number of bytes required to [encode](char::encode_utf8) a `char` to
     /// UTF-8 encoding.
-    #[unstable(feature = "char_max_len", issue = "121714")]
+    #[stable(feature = "char_max_len_assoc", since = "CURRENT_RUSTC_VERSION")]
     pub const MAX_LEN_UTF8: usize = 4;
 
     /// The maximum number of two-byte units required to [encode](char::encode_utf16) a `char`
     /// to UTF-16 encoding.
-    #[unstable(feature = "char_max_len", issue = "121714")]
+    #[stable(feature = "char_max_len_assoc", since = "CURRENT_RUSTC_VERSION")]
     pub const MAX_LEN_UTF16: usize = 2;
 
     /// `U+FFFD REPLACEMENT CHARACTER` (�) is used in Unicode to represent a
@@ -952,7 +952,11 @@ impl char {
     #[stable(feature = "rust1", since = "1.0.0")]
     #[inline]
     pub fn is_control(self) -> bool {
-        unicode::Cc(self)
+        // According to
+        // https://www.unicode.org/policies/stability_policy.html#Property_Value,
+        // the set of codepoints in `Cc` will never change.
+        // So we can just hard-code the patterns to match against instead of using a table.
+        matches!(self, '\0'..='\x1f' | '\x7f'..='\u{9f}')
     }
 
     /// Returns `true` if this `char` has the `Grapheme_Extend` property.
@@ -967,7 +971,43 @@ impl char {
     #[must_use]
     #[inline]
     pub(crate) fn is_grapheme_extended(self) -> bool {
-        unicode::Grapheme_Extend(self)
+        !self.is_ascii() && unicode::Grapheme_Extend(self)
+    }
+
+    /// Returns `true` if this `char` has the `Cased` property.
+    ///
+    /// `Cased` is described in Chapter 4 (Character Properties) of the [Unicode Standard] and
+    /// specified in the [Unicode Character Database][ucd] [`DerivedCoreProperties.txt`].
+    ///
+    /// [Unicode Standard]: https://www.unicode.org/versions/latest/
+    /// [ucd]: https://www.unicode.org/reports/tr44/
+    /// [`DerivedCoreProperties.txt`]: https://www.unicode.org/Public/UCD/latest/ucd/DerivedCoreProperties.txt
+    #[must_use]
+    #[inline]
+    #[doc(hidden)]
+    #[unstable(feature = "char_internals", reason = "exposed only for libstd", issue = "none")]
+    pub fn is_cased(self) -> bool {
+        if self.is_ascii() { self.is_ascii_alphabetic() } else { unicode::Cased(self) }
+    }
+
+    /// Returns `true` if this `char` has the `Case_Ignorable` property.
+    ///
+    /// `Case_Ignorable` is described in Chapter 4 (Character Properties) of the [Unicode Standard] and
+    /// specified in the [Unicode Character Database][ucd] [`DerivedCoreProperties.txt`].
+    ///
+    /// [Unicode Standard]: https://www.unicode.org/versions/latest/
+    /// [ucd]: https://www.unicode.org/reports/tr44/
+    /// [`DerivedCoreProperties.txt`]: https://www.unicode.org/Public/UCD/latest/ucd/DerivedCoreProperties.txt
+    #[must_use]
+    #[inline]
+    #[doc(hidden)]
+    #[unstable(feature = "char_internals", reason = "exposed only for libstd", issue = "none")]
+    pub fn is_case_ignorable(self) -> bool {
+        if self.is_ascii() {
+            matches!(self, '\'' | '.' | ':' | '^' | '`')
+        } else {
+            unicode::Case_Ignorable(self)
+        }
     }
 
     /// Returns `true` if this `char` has one of the general categories for numbers.

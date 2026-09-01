@@ -80,6 +80,9 @@ pub trait CommandExt: Sealed {
     /// or acquiring a mutex are not guaranteed to work (due to
     /// other threads perhaps still running when the `fork` was run).
     ///
+    /// Note that the list of allocating functions includes [`Error::new`] and
+    /// [`Error::other`]. To signal a non-trivial error, prefer [`panic!`].
+    ///
     /// For further details refer to the [POSIX fork() specification]
     /// and the equivalent documentation for any targeted
     /// platform, especially the requirements around *async-signal-safety*.
@@ -102,6 +105,8 @@ pub trait CommandExt: Sealed {
     /// [POSIX fork() specification]:
     ///     https://pubs.opengroup.org/onlinepubs/9699919799/functions/fork.html
     /// [`std::env`]: mod@crate::env
+    /// [`Error::new`]: crate::io::Error::new
+    /// [`Error::other`]: crate::io::Error::other
     #[stable(feature = "process_pre_exec", since = "1.34.0")]
     unsafe fn pre_exec<F>(&mut self, f: F) -> &mut process::Command
     where
@@ -406,8 +411,10 @@ pub trait ChildExt: Sealed {
     /// use libc::SIGTERM;
     ///
     /// fn main() -> io::Result<()> {
+    ///     # if cfg!(not(all(target_vendor = "apple", not(target_os = "macos")))) {
     ///     let child = Command::new("cat").stdin(Stdio::piped()).spawn()?;
     ///     child.send_signal(SIGTERM)?;
+    ///     # }
     ///     Ok(())
     /// }
     /// ```

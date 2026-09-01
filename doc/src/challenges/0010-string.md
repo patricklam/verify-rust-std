@@ -3,8 +3,7 @@
 - **Status:** Open
 - **Tracking Issue:** [#61](https://github.com/model-checking/verify-rust-std/issues/61)
 - **Start date:** *2024/08/19*
-- **End date:** *2025/04/10*
-- **Reward:** *N/A*
+- **Reward:** *10000 USD*
 
 -------------------
 

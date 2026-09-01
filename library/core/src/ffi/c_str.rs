@@ -22,18 +22,18 @@ use crate::{fmt, ops, slice, str};
 //   actually reference libstd or liballoc in intra-doc links. so, the best we can do is remove the
 //   links to `CString` and `String` for now until a solution is developed
 
-/// Representation of a borrowed C string.
+/// A dynamically-sized view of a C string.
 ///
-/// This type represents a borrowed reference to a nul-terminated
+/// The type `&CStr` represents a reference to a borrowed nul-terminated
 /// array of bytes. It can be constructed safely from a <code>&[[u8]]</code>
 /// slice, or unsafely from a raw `*const c_char`. It can be expressed as a
 /// literal in the form `c"Hello world"`.
 ///
-/// The `CStr` can then be converted to a Rust <code>&[str]</code> by performing
+/// The `&CStr` can then be converted to a Rust <code>&[str]</code> by performing
 /// UTF-8 validation, or into an owned `CString`.
 ///
 /// `&CStr` is to `CString` as <code>&[str]</code> is to `String`: the former
-/// in each pair are borrowed references; the latter are owned
+/// in each pair are borrowing references; the latter are owned
 /// strings.
 ///
 /// Note that this structure does **not** have a guaranteed layout (the `repr(transparent)`
@@ -186,9 +186,7 @@ impl fmt::Debug for CStr {
 impl Default for &CStr {
     #[inline]
     fn default() -> Self {
-        const SLICE: &[c_char] = &[0];
-        // SAFETY: `SLICE` is indeed pointing to a valid nul-terminated string.
-        unsafe { CStr::from_ptr(SLICE.as_ptr()) }
+        c""
     }
 }
 
@@ -756,7 +754,8 @@ impl ops::Index<ops::RangeFrom<usize>> for CStr {
 }
 
 #[stable(feature = "cstring_asref", since = "1.7.0")]
-impl AsRef<CStr> for CStr {
+#[rustc_const_unstable(feature = "const_convert", issue = "143773")]
+impl const AsRef<CStr> for CStr {
     #[inline]
     fn as_ref(&self) -> &CStr {
         self

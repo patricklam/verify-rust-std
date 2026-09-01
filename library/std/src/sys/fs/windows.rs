@@ -258,7 +258,19 @@ impl OpenOptions {
                 Ok(c::GENERIC_READ | (c::FILE_GENERIC_WRITE & !c::FILE_WRITE_DATA))
             }
             (false, false, false, None) => {
-                Err(Error::from_raw_os_error(c::ERROR_INVALID_PARAMETER as i32))
+                // If no access mode is set, check if any creation flags are set
+                // to provide a more descriptive error message
+                if self.create || self.create_new || self.truncate {
+                    Err(io::Error::new(
+                        io::ErrorKind::InvalidInput,
+                        "creating or truncating a file requires write or append access",
+                    ))
+                } else {
+                    Err(io::Error::new(
+                        io::ErrorKind::InvalidInput,
+                        "must specify at least one of read, write, or append access",
+                    ))
+                }
             }
         }
     }
@@ -268,12 +280,18 @@ impl OpenOptions {
             (true, false) => {}
             (false, false) => {
                 if self.truncate || self.create || self.create_new {
-                    return Err(Error::from_raw_os_error(c::ERROR_INVALID_PARAMETER as i32));
+                    return Err(io::Error::new(
+                        io::ErrorKind::InvalidInput,
+                        "creating or truncating a file requires write or append access",
+                    ));
                 }
             }
             (_, true) => {
                 if self.truncate && !self.create_new {
-                    return Err(Error::from_raw_os_error(c::ERROR_INVALID_PARAMETER as i32));
+                    return Err(io::Error::new(
+                        io::ErrorKind::InvalidInput,
+                        "creating or truncating a file requires write or append access",
+                    ));
                 }
             }
         }
@@ -585,6 +603,10 @@ impl File {
 
     pub fn read_buf(&self, cursor: BorrowedCursor<'_>) -> io::Result<()> {
         self.handle.read_buf(cursor)
+    }
+
+    pub fn read_buf_at(&self, cursor: BorrowedCursor<'_>, offset: u64) -> io::Result<()> {
+        self.handle.read_buf_at(cursor, offset)
     }
 
     pub fn write(&self, buf: &[u8]) -> io::Result<usize> {
@@ -1490,6 +1512,23 @@ pub fn set_perm(p: &WCStr, perm: FilePermissions) -> io::Result<()> {
         cvt(c::SetFileAttributesW(p.as_ptr(), perm.attrs))?;
         Ok(())
     }
+}
+
+pub fn set_times(p: &WCStr, times: FileTimes) -> io::Result<()> {
+    let mut opts = OpenOptions::new();
+    opts.write(true);
+    opts.custom_flags(c::FILE_FLAG_BACKUP_SEMANTICS);
+    let file = File::open_native(p, &opts)?;
+    file.set_times(times)
+}
+
+pub fn set_times_nofollow(p: &WCStr, times: FileTimes) -> io::Result<()> {
+    let mut opts = OpenOptions::new();
+    opts.write(true);
+    // `FILE_FLAG_OPEN_REPARSE_POINT` for no_follow behavior
+    opts.custom_flags(c::FILE_FLAG_BACKUP_SEMANTICS | c::FILE_FLAG_OPEN_REPARSE_POINT);
+    let file = File::open_native(p, &opts)?;
+    file.set_times(times)
 }
 
 fn get_path(f: &File) -> io::Result<PathBuf> {

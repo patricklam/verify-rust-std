@@ -21,8 +21,9 @@ use crate::intrinsics::{self, const_eval_select};
 /// slow down const-eval/Miri and we'll get the panic message instead of the interpreter's nice
 /// diagnostic, but our ability to detect UB is unchanged.
 /// But if `check_language_ub` is used when the check is actually for library UB, the check is
-/// omitted in const-eval/Miri and thus if we eventually execute language UB which relies on the
-/// library UB, the backtrace Miri reports may be far removed from original cause.
+/// omitted in const-eval/Miri and thus UB might occur undetected. Even if we eventually execute
+/// language UB which relies on the library UB, the backtrace Miri reports may be far removed from
+/// original cause.
 ///
 /// These checks are behind a condition which is evaluated at codegen time, not expansion time like
 /// [`debug_assert`]. This means that a standard library built with optimizations and debug
@@ -69,7 +70,7 @@ macro_rules! assert_unsafe_precondition {
                     let msg = concat!("unsafe precondition(s) violated: ", $message,
                         "\n\nThis indicates a bug in the program. \
                         This Undefined Behavior check is optional, and cannot be relied on for safety.");
-                    ::core::panicking::panic_nounwind_fmt(::core::fmt::Arguments::new_const(&[msg]), false);
+                    ::core::panicking::panic_nounwind_fmt(::core::fmt::Arguments::from_str(msg), false);
                 }
             }
 
@@ -192,7 +193,7 @@ pub use predicates::*;
 #[cfg(not(kani))]
 mod predicates {
     /// Checks if a pointer can be dereferenced, ensuring:
-    ///   * `src` is valid for reads (see [`crate::ptr`] documentation).
+    ///   * `src` is valid for reads and writes (see [`crate::ptr`] documentation).
     ///   * `src` is properly aligned (use `read_unaligned` if not).
     ///   * `src` points to a properly initialized value of type `T`.
     ///

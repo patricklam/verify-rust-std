@@ -37,6 +37,7 @@ struct StructuredFnName {
 
 fn split_by_double_colons(s: &str) -> Vec<String> {
     let mut bracket_level = 0;
+    let mut prev_was_minus = false;
     let mut current_string = String::new();
     let mut previous_strings = vec![];
     let mut colons = 0;
@@ -44,7 +45,11 @@ fn split_by_double_colons(s: &str) -> Vec<String> {
         current_string.push(c);
         match c {
             '<' => bracket_level += 1,
-            '>' => bracket_level -= 1,
+            '>' => {
+                if !prev_was_minus {
+                    bracket_level -= 1;
+                }
+            }
             ':' => {
                 if bracket_level > 0 {
                     continue;
@@ -58,6 +63,10 @@ fn split_by_double_colons(s: &str) -> Vec<String> {
             }
             _ => (),
         }
+        prev_was_minus = false;
+        if c == '-' {
+            prev_was_minus = true
+        }
     }
     previous_strings.push(current_string.clone());
     previous_strings
@@ -66,13 +75,18 @@ fn split_by_double_colons(s: &str) -> Vec<String> {
 fn split_by_commas(s: &str) -> Vec<String> {
     let mut bracket_level = 0;
     let mut parens_level = 0;
+    let mut prev_was_minus = false;
     let mut current_string = String::new();
     let mut previous_strings = vec![];
     for c in s.chars() {
         current_string.push(c);
         match c {
             '<' => bracket_level += 1,
-            '>' => bracket_level -= 1,
+            '>' => {
+                if !prev_was_minus {
+                    bracket_level -= 1;
+                }
+            }
             '(' => parens_level += 1,
             ')' => parens_level -= 1,
             ',' => {
@@ -88,135 +102,15 @@ fn split_by_commas(s: &str) -> Vec<String> {
             }
             _ => (),
         }
+        prev_was_minus = false;
+        if c == '-' {
+            prev_was_minus = true
+        }
     }
     previous_strings.push(current_string.trim().to_string().clone());
     previous_strings
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn colons_singleton() {
-        let result = split_by_double_colons("a");
-        assert_eq!(result, ["a"]);
-    }
-
-    #[test]
-    fn colons_no_brackets() {
-        let result = split_by_double_colons("one::two");
-        assert_eq!(result, ["one", "two"]);
-    }
-
-    #[test]
-    fn colons_brackets_no_colons() {
-        let result = split_by_double_colons("one::<two>::three");
-        assert_eq!(result, ["one", "<two>", "three"]);
-    }
-
-    #[test]
-    fn colons_brackets_with_colons() {
-        let result = split_by_double_colons("one::<two::four>::three");
-        assert_eq!(result, ["one", "<two::four>", "three"]);
-    }
-
-    #[test]
-    fn commas_singleton() {
-        let result = split_by_commas("a");
-        assert_eq!(result, ["a"]);
-    }
-
-    #[test]
-    fn commas_brackets() {
-        let result = split_by_commas("<a,b>");
-        assert_eq!(result, ["<a,b>"]);
-    }
-
-    #[test]
-    fn commas_no_brackets() {
-        let result = split_by_commas("a, b");
-        assert_eq!(result, ["a", "b"]);
-    }
-
-    #[test]
-    fn commas_parens() {
-        let result = split_by_commas("(a,b)");
-        assert_eq!(result, ["(a,b)"]);
-    }
-
-    #[test]
-    fn commas_unmatched() {
-        let result = split_by_commas("<a,b),c");
-        assert_eq!(result, ["<a,b),c"]);
-    }
-
-    #[test]
-    fn parse_fn_name_insufficient_segments() {
-        let result = parse_fn_name("foo".to_string(), false, false);
-        assert_eq!(
-            result,
-            StructuredFnName {
-                trait_impl: None,
-                module_path: Vec::new(),
-                type_parameters: Vec::new(),
-                item: "foo".to_string(),
-                is_public: false,
-                typ: "unsafe-containing".to_string()
-            }
-        );
-    }
-
-    #[test]
-    fn parse_fn_name_trait_impl() {
-        let result = parse_fn_name(
-            "<std::fs::Permissions as std::os::unix::fs::PermissionsExt>::from_mode".to_string(),
-            false,
-            false,
-        );
-        assert_eq!(
-            result,
-            StructuredFnName {
-                trait_impl: Some((
-                    "std::fs::Permissions".to_string(),
-                    "std::os::unix::fs::PermissionsExt".to_string()
-                )),
-                module_path: Vec::new(),
-                type_parameters: Vec::new(),
-                item: "from_mode".to_string(),
-                is_public: false,
-                typ: "unsafe-containing".to_string()
-            }
-        );
-    }
-
-    #[test]
-    fn parse_fn_name_with_generics() {
-        let result = parse_fn_name(
-            "std::sync::mpmc::list::Channel::<T>::len".to_string(),
-            false,
-            false,
-        );
-        assert_eq!(
-            result,
-            StructuredFnName {
-                trait_impl: None,
-                module_path: [
-                    "std".to_string(),
-                    "sync".to_string(),
-                    "mpmc".to_string(),
-                    "list".to_string(),
-                    "Channel".to_string()
-                ]
-                .to_vec(),
-                type_parameters: ["T".to_string()].to_vec(),
-                item: "len".to_string(),
-                is_public: false,
-                typ: "unsafe-containing".to_string()
-            }
-        );
-    }
-}
 static TRAIT_IMPL: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"<(.+) as (.+)>").expect("invalid regex"));
 static BRACKETS: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"<(.+)>").expect("invalid regex"));
@@ -375,5 +269,142 @@ fn main() {
             eprintln!("error processing {}: {}", arg, err);
             process::exit(1);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn colons_singleton() {
+        let result = split_by_double_colons("a");
+        assert_eq!(result, ["a"]);
+    }
+
+    #[test]
+    fn colons_no_brackets() {
+        let result = split_by_double_colons("one::two");
+        assert_eq!(result, ["one", "two"]);
+    }
+
+    #[test]
+    fn colons_brackets_no_colons() {
+        let result = split_by_double_colons("one::<two>::three");
+        assert_eq!(result, ["one", "<two>", "three"]);
+    }
+
+    #[test]
+    fn colons_brackets_with_colons() {
+        let result = split_by_double_colons("one::<two::four>::three");
+        assert_eq!(result, ["one", "<two::four>", "three"]);
+    }
+
+    #[test]
+    fn colons_arrow() {
+        let result = split_by_double_colons("mymod::<fn()->bar::Baz>::the_item");
+        assert_eq!(result, ["mymod", "<fn()->bar::Baz>", "the_item"]);
+    }
+
+    #[test]
+    fn commas_singleton() {
+        let result = split_by_commas("a");
+        assert_eq!(result, ["a"]);
+    }
+
+    #[test]
+    fn commas_brackets() {
+        let result = split_by_commas("<a,b>");
+        assert_eq!(result, ["<a,b>"]);
+    }
+
+    #[test]
+    fn commas_no_brackets() {
+        let result = split_by_commas("a, b");
+        assert_eq!(result, ["a", "b"]);
+    }
+
+    #[test]
+    fn commas_parens() {
+        let result = split_by_commas("(a,b)");
+        assert_eq!(result, ["(a,b)"]);
+    }
+
+    #[test]
+    fn commas_unmatched() {
+        let result = split_by_commas("<a,b),c");
+        assert_eq!(result, ["<a,b),c"]);
+    }
+
+    #[test]
+    fn commas_arrow() {
+        let result = split_by_commas("mymod, <fn()->bar::Baz>, the_item");
+        assert_eq!(result, ["mymod", "<fn()->bar::Baz>", "the_item"]);
+    }
+
+    #[test]
+    fn parse_fn_name_insufficient_segments() {
+        let result = parse_fn_name("foo".to_string(), false, false);
+        assert_eq!(
+            result,
+            StructuredFnName {
+                trait_impl: None,
+                module_path: Vec::new(),
+                type_parameters: Vec::new(),
+                item: "foo".to_string(),
+                is_public: false,
+                typ: "unsafe-containing".to_string()
+            }
+        );
+    }
+
+    #[test]
+    fn parse_fn_name_trait_impl() {
+        let result = parse_fn_name(
+            "<std::fs::Permissions as std::os::unix::fs::PermissionsExt>::from_mode".to_string(),
+            false,
+            false,
+        );
+        assert_eq!(
+            result,
+            StructuredFnName {
+                trait_impl: Some((
+                    "std::fs::Permissions".to_string(),
+                    "std::os::unix::fs::PermissionsExt".to_string()
+                )),
+                module_path: Vec::new(),
+                type_parameters: Vec::new(),
+                item: "from_mode".to_string(),
+                is_public: false,
+                typ: "unsafe-containing".to_string()
+            }
+        );
+    }
+
+    #[test]
+    fn parse_fn_name_with_generics() {
+        let result = parse_fn_name(
+            "std::sync::mpmc::list::Channel::<T>::len".to_string(),
+            false,
+            false,
+        );
+        assert_eq!(
+            result,
+            StructuredFnName {
+                trait_impl: None,
+                module_path: [
+                    "std".to_string(),
+                    "sync".to_string(),
+                    "mpmc".to_string(),
+                    "list".to_string(),
+                    "Channel".to_string()
+                ]
+                .to_vec(),
+                type_parameters: ["T".to_string()].to_vec(),
+                item: "len".to_string(),
+                is_public: false,
+                typ: "unsafe-containing".to_string()
+            }
+        );
     }
 }
